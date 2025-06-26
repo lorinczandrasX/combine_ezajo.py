@@ -29,31 +29,44 @@ FINAL_CHUNK_FOOTER = (
 
 
 def generate_directory_tree(root_dir, excluded_dirs_set, script_name):
-    """Generál egy szöveges fa-struktúrát a megadott könyvtárról."""
+    """
+    Helyesen generál egy rekurzív, szöveges fa-struktúrát a megadott könyvtárról.
+    """
     tree_lines = ["// --- PLUGIN FÁJLSZERKEZETE ---\n"]
     tree_lines.append(f"// {os.path.basename(os.path.abspath(root_dir))}/")
+    
+    # Rekurzív segédfüggvény a fa felépítéséhez
+    def build_tree_recursive(current_dir, prefix=""):
+        try:
+            items = sorted(os.listdir(current_dir))
+        except OSError:
+            return
 
-    for root, dirs, files in os.walk(root_dir, topdown=True):
-        dirs[:] = [d for d in dirs if d not in excluded_dirs_set]
+        # Szétválogatjuk a mappákat és fájlokat
+        dirs = [d for d in items if os.path.isdir(os.path.join(current_dir, d)) and d not in excluded_dirs_set]
         
-        files_to_render = sorted([
-            f for f in files 
-            if f != script_name 
-            and not (f.startswith(f"{OUTPUT_PREFIX}_") and f.endswith(".txt"))
+        # Fájlok szűrése a megadott feltételek szerint
+        files = [
+            f for f in items 
+            if os.path.isfile(os.path.join(current_dir, f))
+            and f != script_name
+            and not (f.startswith(OUTPUT_PREFIX + '_') and f.endswith('.txt'))
             and any(f.endswith(ext) for ext in ALLOWED_EXTENSIONS)
-        ])
-        dirs.sort()
-
-        level = root.replace(root_dir, '').count(os.sep)
-        indent = '    ' * level
+        ]
         
-        for d in dirs:
-            tree_lines.append(f"// {indent}├── {d}/")
+        # A listák egyesítése, hogy a mappák legyenek elől
+        entries = dirs + files
         
-        for i, f in enumerate(files_to_render):
-            prefix = '└──' if i == len(files_to_render) - 1 and not dirs else '├──'
-            tree_lines.append(f"// {indent}{prefix} {f}")
+        for i, entry in enumerate(entries):
+            connector = "└── " if i == len(entries) - 1 else "├── "
+            tree_lines.append(f"// {prefix}{connector}{entry}")
+            
+            # Ha az aktuális elem egy mappa, rekurzívan meghívjuk rá a függvényt
+            if entry in dirs:
+                extension = "│   " if i < len(entries) - 1 else "    "
+                build_tree_recursive(os.path.join(current_dir, entry), prefix + extension)
 
+    build_tree_recursive(root_dir)
     tree_lines.append("// ---------------------------\n\n")
     return "\n".join(tree_lines)
 
@@ -100,7 +113,6 @@ def create_chunks_in_current_dir():
                 file_lines = f.readlines()
             
             header = f"// --- {file_path.replace(os.sep, '/')} ---\n"
-            # Hozzáadjuk a fejléc és az extra új sorok számát is
             lines_to_add = len(file_lines) + 3
 
             if lines_in_current_chunk > 0 and (lines_in_current_chunk + lines_to_add) > MAX_LINES:
@@ -124,9 +136,7 @@ def create_chunks_in_current_dir():
         
     total_chunks = len(all_chunks)
 
-    # ÚJ: Döntés a kimenet alapján (vágólap vagy fájlok)
     if total_chunks == 1:
-        # Ha csak egy chunk van, másolás vágólapra
         final_content_list = all_chunks[0]
         final_content_list.insert(0, directory_tree_str)
         final_content_list.append(FINAL_CHUNK_FOOTER)
@@ -139,7 +149,6 @@ def create_chunks_in_current_dir():
         print("Most egyszerűen csak illeszd be (Ctrl+V).")
         print("------------------------------------------------------")
     else:
-        # Ha több chunk van, fájlok létrehozása
         print(f"\nA kód túl hosszú, {total_chunks} darab fájl jön létre...")
         all_chunks[0].insert(0, directory_tree_str)
 
